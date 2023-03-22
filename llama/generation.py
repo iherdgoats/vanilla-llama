@@ -11,6 +11,7 @@ from llama.model import Transformer
 
 class LLaMA:
     def __init__(self, model: Transformer, tokenizer: Tokenizer):
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model = model
         self.tokenizer = tokenizer
 
@@ -64,7 +65,7 @@ class LLaMA:
 
         total_len = min(params.max_seq_len, max_gen_len + max_prompt_size)
 
-        tokens = torch.full((bsz, total_len), self.tokenizer.pad_id).cuda().long()
+        tokens = torch.full((bsz, total_len), self.tokenizer.pad_id).to(self.device).long()
         for k, t in enumerate(prompt_tokens):
             tokens[k, : len(t)] = torch.tensor(t).long()
         input_text_mask = tokens != self.tokenizer.pad_id

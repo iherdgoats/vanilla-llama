@@ -94,12 +94,13 @@ class Attention(nn.Module):
             bias=False,
         )
 
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.cache_k = torch.zeros(
             (args.max_batch_size, args.max_seq_len, self.n_local_heads, self.head_dim)
-        ).cuda()
+        ).to(device)
         self.cache_v = torch.zeros(
             (args.max_batch_size, args.max_seq_len, self.n_local_heads, self.head_dim)
-        ).cuda()
+        ).to(device)
 
     def forward(
         self,
