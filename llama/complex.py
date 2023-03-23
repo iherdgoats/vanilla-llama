@@ -33,7 +33,7 @@ class ComplexTensorPair:
             self.imag.view(*args, **kwargs)
         )
 
-    def __mul__(self, other: ComplexTensorPair):
+    def __mul__(self, other: 'ComplexTensorPair'):
         real = self.real * other.real - self.imag * other.imag
         imag = self.real * other.imag + self.imag * other.real
         result = ComplexTensorPair(real, imag)
