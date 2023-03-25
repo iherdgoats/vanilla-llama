@@ -12,8 +12,8 @@ class ComplexTensorPair:
     
     def __getitem__(self, idx):
         return ComplexTensorPair(
-            self.real[idx],
-            self.imag[idx]
+            self.real[idx, ...],
+            self.imag[idx, ...]
         )
     
     @property
