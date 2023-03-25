@@ -9,7 +9,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from llama.workaround import triu
+from llama.workaround import matmul_complex, triu
 
 
 @dataclass
@@ -52,16 +52,6 @@ def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
     assert freqs_cis.shape == (x.shape[1], x.shape[-2], x.shape[-1])
     shape = [d if i == 1 or i == ndim - 2 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
     return freqs_cis.view(*shape)
-
-
-def matmul_complex(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-    a_real = a[..., 0]
-    a_imag = a[..., 1]
-    b_real = b[..., 0]
-    b_imag = b[..., 1]
-    return torch.stack([
-        a_real * b_real - a_imag * b_imag, 
-        a_real * b_imag + a_imag * b_real], dim=-1)
 
 
 def apply_rotary_emb(
