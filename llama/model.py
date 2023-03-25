@@ -10,6 +10,7 @@ from torch import nn
 import torch.nn.functional as F
 
 from llama.complex import ComplexTensorPair, _view_as_complex, _view_as_real
+from llama.triu import triu
 
 
 @dataclass
@@ -246,7 +247,7 @@ class Transformer(nn.Module):
             mask = torch.full(
                 (1, 1, seqlen, seqlen), float("-inf"), device=tokens.device
             )
-            mask = torch.triu(mask, diagonal=start_pos + 1).type_as(h)
+            mask = triu(mask, diagonal=start_pos + 1).type_as(h)
 
         for layer in self.layers:
             h = h.to(layer.parameters().__next__().device)
