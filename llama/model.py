@@ -10,7 +10,7 @@ from torch import nn
 import torch.nn.functional as F
 
 from llama.complex import ComplexTensorPair, _view_as_complex, _view_as_real
-from llama.triu import triu
+from llama.workaround import triu
 
 
 @dataclass
