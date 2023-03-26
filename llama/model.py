@@ -109,18 +109,18 @@ class Attention(nn.Module):
         xk = xk.view(bsz, seqlen, self.n_local_heads, self.head_dim)
         xv = xv.view(bsz, seqlen, self.n_local_heads, self.head_dim)
 
-        xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis[start_pos : start_pos + seqlen])
+        xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
 
         cache_k = hidden_state[0].to(xq)
         cache_v = hidden_state[1].to(xq)
 
-        cache_k[:bsz, start_pos : start_pos + seqlen] = xk
-        cache_v[:bsz, start_pos : start_pos + seqlen] = xv
+        cache_k[:bsz, start_pos.item() : start_pos.item() + seqlen] = xk
+        cache_v[:bsz, start_pos.item() : start_pos.item() + seqlen] = xv
 
         hidden_state = torch.stack([cache_k, cache_v], dim=0)
 
-        keys = cache_k[:bsz, : start_pos + seqlen]
-        values = cache_v[:bsz, : start_pos + seqlen]
+        keys = cache_k[:bsz, : start_pos.item() + seqlen]
+        values = cache_v[:bsz, : start_pos.item() + seqlen]
 
         xq = xq.transpose(1, 2)
         keys = keys.transpose(1, 2)
@@ -226,10 +226,19 @@ class Transformer(nn.Module):
     def forward(self, tokens: torch.Tensor, start_pos: torch.IntTensor, mask: torch.Tensor, hidden_state: torch.Tensor):
         seqlen = tokens.shape[1]
         h = self.tok_embeddings(tokens)
+        self.freqs_cis = self.freqs_cis.to(h.device)
+        freqs_cis = self.freqs_cis[start_pos.item() : start_pos.item() + seqlen]
+
+        mask = None
+        if seqlen > 1:
+            mask = torch.full(
+                (1, 1, seqlen, seqlen), float("-inf"), device=tokens.device
+            )
+            mask = triu(mask, diagonal=start_pos.item() + 1).type_as(h)
 
         for index, layer in enumerate(self.layers):
             h = h.to(layer.parameters().__next__().device)
-            h, hidden_state[index] = layer(h, start_pos, self.freqs_cis, mask, hidden_state[index])
+            h, hidden_state[index] = layer(h, start_pos, freqs_cis, mask, hidden_state[index])
 
         h = h.to(self.norm.parameters().__next__().device)
         h = self.norm(h)
