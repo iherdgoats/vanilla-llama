@@ -7,7 +7,6 @@ import torch
 
 from llama.tokenizer import Tokenizer
 from llama.model import Transformer
-from llama.workaround import triu
 
 
 class LLaMA:
@@ -74,7 +73,7 @@ class LLaMA:
         prev_pos = 0
         hidden_state = self.model.init_hidden_state()
         for cur_pos in range(start_pos, total_len):
-            mask = attention_mask(prev_pos, cur_pos - prev_pos).to(tokens.device)
+            mask = self.model.attention_mask(prev_pos, cur_pos - prev_pos).to(tokens.device)
             logits, hidden_state = self.model.forward(tokens[:, prev_pos:cur_pos], torch.IntTensor([prev_pos]), mask, hidden_state)
             if temperature > 0:
                 probs = torch.softmax(logits / temperature, dim=-1)
@@ -118,11 +117,3 @@ def sample_top_p(probs, p):
     next_token = torch.multinomial(probs_sort, num_samples=1)
     next_token = torch.gather(probs_idx, -1, next_token)
     return next_token
-
-
-def attention_mask(start_pos, seqlen):
-    if seqlen > 1:
-        mask = torch.full((1, 1, seqlen, seqlen), float("-inf"))
-        return triu(mask, diagonal=start_pos + 1)
-
-    return torch.zeros((1, 1, 1, 1))
