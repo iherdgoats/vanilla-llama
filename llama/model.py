@@ -223,19 +223,12 @@ class Transformer(nn.Module):
         )
 
     @torch.inference_mode()
-    def forward(self, tokens: torch.Tensor, start_pos: torch.IntTensor, mask: torch.Tensor, hidden_state: torch.Tensor):
+    def forward(self, tokens: torch.Tensor, start_pos: torch.IntTensor, mask: Optional[torch.Tensor], hidden_state: torch.Tensor):
         seqlen = tokens.shape[1]
         h = self.tok_embeddings(tokens)
         self.freqs_cis = self.freqs_cis.to(h.device)
         freqs_cis = self.freqs_cis[start_pos.item() : start_pos.item() + seqlen]
-
-        mask = None
-        if seqlen > 1:
-            mask = torch.full(
-                (1, 1, seqlen, seqlen), float("-inf"), device=tokens.device
-            )
-            mask = triu(mask, diagonal=start_pos.item() + 1).type_as(h)
-
+        
         for index, layer in enumerate(self.layers):
             h = h.to(layer.parameters().__next__().device)
             h, hidden_state[index] = layer(h, start_pos, freqs_cis, mask, hidden_state[index])

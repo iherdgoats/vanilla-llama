@@ -74,7 +74,7 @@ class LLaMA:
         prev_pos = 0
         hidden_state = self.model.init_hidden_state()
         for cur_pos in range(start_pos, total_len):
-            mask = attention_mask(start_pos, cur_pos - prev_pos, tokens.device)
+            mask = attention_mask(prev_pos, (cur_pos - prev_pos) + 1, tokens.device)
             logits, hidden_state = self.model.forward(tokens[:, prev_pos:cur_pos], torch.IntTensor([prev_pos]), mask, hidden_state)
             if temperature > 0:
                 probs = torch.softmax(logits / temperature, dim=-1)
@@ -125,6 +125,6 @@ def attention_mask(start_pos, seqlen, device):
         mask = torch.full(
             (1, 1, seqlen, seqlen), float("-inf"), device=device
         )
-        return triu(mask, diagonal=start_pos+1)
-    else:
-        return torch.zeros((1, 1, 1, 1), device=device)
+        return triu(mask, diagonal=start_pos.item() + 1)
+
+    return None
