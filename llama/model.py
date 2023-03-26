@@ -82,9 +82,10 @@ class Attention(nn.Module):
         seqlen: int,
         freqs_cis: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        xq_ = xq.float().reshape(bsz, seqlen, self.n_local_heads, self.head_dim/2, 2)
-        xk_ = xk.float().reshape(bsz, seqlen, self.n_local_heads, self.head_dim/2, 2)
-        freqs_cis = freqs_cis.view(seqlen, self.head_dim/2, 2)
+        head_dim = math.ceil(self.head_dim/2)
+        xq_ = xq.float().reshape(bsz, seqlen, self.n_local_heads, head_dim, 2)
+        xk_ = xk.float().reshape(bsz, seqlen, self.n_local_heads, head_dim, 2)
+        freqs_cis = freqs_cis.view(seqlen, head_dim, 2)
         xq_out = matmul_complex(xq_, freqs_cis).flatten(3)
         xk_out = matmul_complex(xk_, freqs_cis).flatten(3)
         return xq_out.type_as(xq), xk_out.type_as(xk)
