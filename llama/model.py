@@ -1,7 +1,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # This software may be used and distributed according to the terms of the GNU General Public License version 3.
 
-from typing import Optional, Tuple, Type
+from typing import Optional, Tuple
 from dataclasses import dataclass
 import math
 
@@ -165,7 +165,7 @@ class FeedForward(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, layer_id: int, args: ModelArgs):
+    def __init__(self, args: ModelArgs):
         super().__init__()
         self.n_heads = args.n_heads
         self.dim = args.dim
@@ -174,7 +174,6 @@ class TransformerBlock(nn.Module):
         self.feed_forward = FeedForward(
             dim=args.dim, hidden_dim=4 * args.dim, multiple_of=args.multiple_of
         )
-        self.layer_id = layer_id
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
 
@@ -209,8 +208,8 @@ class Transformer(nn.Module):
         self.tok_embeddings = torch.nn.Embedding(params.vocab_size, params.dim)
 
         self.layers = torch.nn.ModuleList()
-        for layer_id in range(params.n_layers):
-            self.layers.append(TransformerBlock(layer_id, params))
+        for i in range(params.n_layers):
+            self.layers.append(TransformerBlock(params))
 
         self.norm = RMSNorm(params.dim, eps=params.norm_eps)
 
@@ -220,8 +219,13 @@ class Transformer(nn.Module):
             self.params.dim // self.params.n_heads, self.params.max_seq_len * 2
         )
 
+    def init_hidden_state(self):
+        return torch.zeros(
+            (self.n_layers, 2, self.max_batch_size, self.max_seq_len, self.n_heads, self.head_dim)
+        )
+
     @torch.inference_mode()
-    def forward(self, tokens: torch.Tensor, start_pos: int, hidden_state: Optional[torch.Tensor] = None):
+    def forward(self, tokens: torch.Tensor, start_pos: int, hidden_state: torch.Tensor):
         _bsz, seqlen = tokens.shape
         h = self.tok_embeddings(tokens)
         self.freqs_cis = self.freqs_cis.to(h.device)
@@ -233,11 +237,6 @@ class Transformer(nn.Module):
                 (1, 1, seqlen, seqlen), float("-inf"), device=tokens.device
             )
             mask = triu(mask, diagonal=start_pos + 1).type_as(h)
-
-        if hidden_state is None:
-            hidden_state = torch.zeros(
-                (self.n_layers, 2, self.max_batch_size, self.max_seq_len, self.n_heads, self.head_dim)
-            ).to(h.device)
 
         for index, layer in enumerate(self.layers):
             h = h.to(layer.parameters().__next__().device)
