@@ -111,18 +111,18 @@ class Attention(nn.Module):
         xk = xk.view(bsz, seqlen, self.n_local_heads, self.head_dim)
         xv = xv.view(bsz, seqlen, self.n_local_heads, self.head_dim)
 
-        xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
+        xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis[start_pos : start_pos + seqlen])
 
         cache_k = hidden_state[0].to(xq)
         cache_v = hidden_state[1].to(xq)
 
-        cache_k[:bsz, start_pos.item() : start_pos.item() + seqlen] = xk
-        cache_v[:bsz, start_pos.item() : start_pos.item() + seqlen] = xv
+        cache_k[:bsz, start_pos : start_pos + seqlen] = xk
+        cache_v[:bsz, start_pos : start_pos + seqlen] = xv
 
         hidden_state = torch.stack([cache_k, cache_v], dim=0)
 
-        keys = cache_k[:bsz, : start_pos.item() + seqlen]
-        values = cache_v[:bsz, : start_pos.item() + seqlen]
+        keys = cache_k[:bsz, : start_pos + seqlen]
+        values = cache_v[:bsz, : start_pos + seqlen]
 
         xq = xq.transpose(1, 2)
         keys = keys.transpose(1, 2)
@@ -228,19 +228,17 @@ class Transformer(nn.Module):
     def forward(self, tokens: torch.Tensor, start_pos: torch.IntTensor, hidden_state: torch.Tensor):
         _bsz, seqlen = tokens.shape
         h = self.tok_embeddings(tokens)
-        self.freqs_cis = self.freqs_cis.to(h.device)
-        freqs_cis = self.freqs_cis[start_pos.item() : start_pos.item() + seqlen]
 
         mask = None
         if seqlen > 1:
             mask = torch.full(
                 (1, 1, seqlen, seqlen), float("-inf"), device=tokens.device
             )
-            mask = triu(mask, diagonal=start_pos.item() + 1).type_as(h)
+            mask = triu(mask, diagonal=start_pos+1).type_as(h)
 
         for index, layer in enumerate(self.layers):
             h = h.to(layer.parameters().__next__().device)
-            h, hidden_state[index] = layer(h, start_pos, freqs_cis, mask, hidden_state[index])
+            h, hidden_state[index] = layer(h, start_pos, self.freqs_cis, mask, hidden_state[index])
 
         h = h.to(self.norm.parameters().__next__().device)
         h = self.norm(h)
