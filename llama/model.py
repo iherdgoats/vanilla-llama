@@ -102,13 +102,8 @@ class Attention(nn.Module):
         start_pos: int,
         freqs_cis: torch.Tensor,
         mask: Optional[torch.Tensor],
-        hidden_state: Optional[torch.Tensor],
+        hidden_state: torch.Tensor,
     ):
-        if hidden_state is None:
-            hidden_state = torch.zeros(
-                (2, x.shape[0], x.shape[1], self.n_local_heads, self.head_dim)
-            ).to(x)
-
         bsz, seqlen, _ = x.shape
         xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
 
@@ -189,12 +184,12 @@ class TransformerBlock(nn.Module):
         start_pos: int,
         freqs_cis: torch.Tensor,
         mask: Optional[torch.Tensor],
-        hidden_state: Optional[torch.Tensor],
+        hidden_state: torch.Tensor,
     ):
-        h, hidden_state = x + self.attention.forward(
+        h, hidden_state = self.attention.forward(
             self.attention_norm(x), start_pos, freqs_cis, mask, hidden_state
         )
-        out = h + self.feed_forward.forward(self.ffn_norm(h))
+        out = x + h + self.feed_forward.forward(self.ffn_norm(h))
         return out, hidden_state
 
 
@@ -233,14 +228,14 @@ class Transformer(nn.Module):
             )
             mask = triu(mask, diagonal=start_pos + 1).type_as(h)
 
-        next_hidden_state = torch.empty(self.params.n_layers)
-        for index, layer in enumerate(self.layers):
-            layer_hidden_state = None
-            if hidden_state is not None:
-                layer_hidden_state = hidden_state[index]
+        if hidden_state is None:
+            hidden_state = torch.zeros(
+                (self.n_layers, 2, _bsz, tokens.shape[1], self.n_local_heads, self.head_dim)
+            ).to(h.device)
 
+        for index, layer in enumerate(self.layers):
             h = h.to(layer.parameters().__next__().device)
-            h, next_hidden_state[index] = layer(h, start_pos, freqs_cis, mask, layer_hidden_state)
+            h, hidden_state[index] = layer(h, start_pos, freqs_cis, mask, hidden_state[index])
 
         h = h.to(self.norm.parameters().__next__().device)
         h = self.norm(h)
@@ -248,4 +243,4 @@ class Transformer(nn.Module):
         hl = h[:, -1, :]
         hl = hl.to(self.output.parameters().__next__().device)
         output = self.output(hl)
-        return output.float(), next_hidden_state
+        return output.float(), hidden_state
