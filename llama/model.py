@@ -46,6 +46,12 @@ def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
     return torch.stack([torch.cos(freqs), torch.sin(freqs)], dim=-1)
 
 
+def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
+    ndim = x.ndim
+    shape = [d if i == 1 or i == ndim - 2 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
+    return freqs_cis.view(*shape)
+
+
 class Attention(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
@@ -84,7 +90,7 @@ class Attention(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         xq_ = xq.float().reshape(bsz, seqlen, self.n_local_heads, -1, 2)
         xk_ = xk.float().reshape(bsz, seqlen, self.n_local_heads, -1, 2)
-        freqs_cis = freqs_cis.view(seqlen, xq_.shape[-2], 2)
+        freqs_cis = reshape_for_broadcast(freqs_cis, xq_)
         xq_out = matmul_complex(xq_, freqs_cis).flatten(3)
         xk_out = matmul_complex(xk_, freqs_cis).flatten(3)
         return xq_out.type_as(xq), xk_out.type_as(xk)
