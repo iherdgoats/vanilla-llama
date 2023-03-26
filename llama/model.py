@@ -202,6 +202,8 @@ class Transformer(nn.Module):
         self.n_layers = params.n_layers
         self.n_heads = params.n_heads
         self.head_dim = params.dim // params.n_heads
+        self.max_batch_size = params.max_batch_size
+        self.max_seq_len = params.max_seq_len
 
         self.tok_embeddings = torch.nn.Embedding(params.vocab_size, params.dim)
 
@@ -233,7 +235,7 @@ class Transformer(nn.Module):
 
         if hidden_state is None:
             hidden_state = torch.zeros(
-                (self.n_layers, 2, _bsz, tokens.shape[1], self.n_heads, self.head_dim)
+                (self.n_layers, 2, self.max_batch_size, self.max_seq_len, self.n_heads, self.head_dim)
             ).to(h.device)
 
         for index, layer in enumerate(self.layers):
