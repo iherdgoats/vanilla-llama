@@ -1,7 +1,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # This software may be used and distributed according to the terms of the GNU General Public License version 3.
 
-from typing import Optional, Tuple
+from typing import Tuple
 from dataclasses import dataclass
 import math
 
@@ -99,7 +99,7 @@ class Attention(nn.Module):
         x: torch.Tensor,
         start_pos: torch.IntTensor,
         freqs_cis: torch.Tensor,
-        mask: Optional[torch.Tensor],
+        mask: torch.Tensor,
         hidden_state: torch.Tensor,
     ):
         bsz, seqlen, _ = x.shape
@@ -180,7 +180,7 @@ class TransformerBlock(nn.Module):
         x: torch.Tensor,
         start_pos: torch.IntTensor,
         freqs_cis: torch.Tensor,
-        mask: Optional[torch.Tensor],
+        mask: torch.Tensor,
         hidden_state: torch.Tensor,
     ):
         attn, hidden_state = self.attention.forward(
@@ -223,12 +223,12 @@ class Transformer(nn.Module):
         )
 
     @torch.inference_mode()
-    def forward(self, tokens: torch.Tensor, start_pos: torch.IntTensor, mask: Optional[torch.Tensor], hidden_state: torch.Tensor):
+    def forward(self, tokens: torch.Tensor, start_pos: torch.IntTensor, mask: torch.Tensor, hidden_state: torch.Tensor):
         seqlen = tokens.shape[1]
         h = self.tok_embeddings(tokens)
         self.freqs_cis = self.freqs_cis.to(h.device)
         freqs_cis = self.freqs_cis[start_pos.item() : start_pos.item() + seqlen]
-        
+
         for index, layer in enumerate(self.layers):
             h = h.to(layer.parameters().__next__().device)
             h, hidden_state[index] = layer(h, start_pos, freqs_cis, mask, hidden_state[index])
