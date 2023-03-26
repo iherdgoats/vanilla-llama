@@ -9,7 +9,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from llama.workaround import matmul_complex, triu
+from llama.workaround import matmul_complex
 
 
 @dataclass
@@ -223,16 +223,9 @@ class Transformer(nn.Module):
         )
 
     @torch.inference_mode()
-    def forward(self, tokens: torch.Tensor, start_pos: torch.IntTensor, hidden_state: torch.Tensor):
+    def forward(self, tokens: torch.Tensor, start_pos: torch.IntTensor, mask: torch.Tensor, hidden_state: torch.Tensor):
         seqlen = tokens.shape[1]
         h = self.tok_embeddings(tokens)
-
-        #mask = None
-        #if seqlen > 1:
-        mask = torch.full(
-            (1, 1, seqlen, seqlen), float("-inf"), device=tokens.device
-        )
-        mask = triu(mask, diagonal=start_pos+1).type_as(h)
 
         for index, layer in enumerate(self.layers):
             h = h.to(layer.parameters().__next__().device)
