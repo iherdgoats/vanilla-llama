@@ -51,20 +51,6 @@ def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
     shape = [d if i == 1 or i == ndim - 2 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
     return freqs_cis.view(*shape)
 
-
-def apply_rotary_emb(
-    xq: torch.Tensor,
-    xk: torch.Tensor,
-    freqs_cis: torch.Tensor
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    xq_ = xq.float().reshape(*xq.shape[:-1], -1, 2)
-    xk_ = xk.float().reshape(*xk.shape[:-1], -1, 2)
-    freqs_cis = reshape_for_broadcast(freqs_cis, xq_)
-    xq_out = matmul_complex(xq_, freqs_cis).flatten(3)
-    xk_out = matmul_complex(xk_, freqs_cis).flatten(3)
-    return xq_out.type_as(xq), xk_out.type_as(xk)
-
-
 class Attention(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
@@ -93,6 +79,20 @@ class Attention(nn.Module):
             bias=False,
         )
 
+    def apply_rotary_emb(
+        self,
+        xq: torch.Tensor,
+        xk: torch.Tensor,
+        bsz: int, 
+        seqlen: int,
+        freqs_cis: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        xq_ = xq.float().reshape(bsz, seqlen, self.n_local_heads, -1, 2)
+        xk_ = xk.float().reshape(bsz, seqlen, self.n_local_heads, -1, 2)
+        freqs_cis = reshape_for_broadcast(freqs_cis, xq_)
+        xq_out = matmul_complex(xq_, freqs_cis).flatten(3)
+        xk_out = matmul_complex(xk_, freqs_cis).flatten(3)
+        return xq_out.type_as(xq), xk_out.type_as(xk)
 
     def forward(
         self,
@@ -109,7 +109,7 @@ class Attention(nn.Module):
         xk = xk.view(bsz, seqlen, self.n_local_heads, self.head_dim)
         xv = xv.view(bsz, seqlen, self.n_local_heads, self.head_dim)
 
-        xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
+        xq, xk = self.apply_rotary_emb(xq, xk, bsz, seqlen, freqs_cis)
 
         cache_k = hidden_state[0].to(xq)
         cache_v = hidden_state[1].to(xq)
