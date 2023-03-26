@@ -39,13 +39,6 @@ class RMSNorm(torch.nn.Module):
         return output * self.weight
 
 
-def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
-    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
-    t = torch.arange(end, device=freqs.device)  # type: ignore
-    freqs = torch.outer(t, freqs).float()  # type: ignore
-    return torch.stack([torch.cos(freqs), torch.sin(freqs)], dim=-1)
-
-
 class Attention(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
@@ -207,11 +200,15 @@ class Transformer(nn.Module):
 
         self.output = nn.Linear(params.dim, params.vocab_size, bias=False)
 
-        self.freqs_cis = nn.Parameter(
-            precompute_freqs_cis(
-                self.params.dim // self.params.n_heads, self.params.max_seq_len * 2
-            )
-        )
+        self.freqs_cis = nn.Parameter(self.precompute_freqs_cis())
+
+    def precompute_freqs_cis(self, theta: float = 10000.0):
+        dim = self.params.dim // self.params.n_heads
+        end = self.params.max_seq_len * 2
+        freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
+        t = torch.arange(end, device=freqs.device)  # type: ignore
+        freqs = torch.outer(t, freqs).float()  # type: ignore
+        return torch.stack([torch.cos(freqs), torch.sin(freqs)], dim=-1)
 
     def init_hidden_state(self):
         return torch.zeros(
