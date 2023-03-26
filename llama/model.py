@@ -48,8 +48,6 @@ def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
 
 def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
     ndim = x.ndim
-    assert 0 <= 1 < ndim
-    assert freqs_cis.shape == (x.shape[1], x.shape[-2], x.shape[-1])
     shape = [d if i == 1 or i == ndim - 2 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
     return freqs_cis.view(*shape)
 
@@ -226,15 +224,15 @@ class Transformer(nn.Module):
 
     @torch.inference_mode()
     def forward(self, tokens: torch.Tensor, start_pos: torch.IntTensor, hidden_state: torch.Tensor):
-        _bsz, seqlen = tokens.shape
+        seqlen = tokens.shape[1]
         h = self.tok_embeddings(tokens)
 
-        mask = None
-        if seqlen > 1:
-            mask = torch.full(
-                (1, 1, seqlen, seqlen), float("-inf"), device=tokens.device
-            )
-            mask = triu(mask, diagonal=start_pos+1).type_as(h)
+        #mask = None
+        #if seqlen > 1:
+        mask = torch.full(
+            (1, 1, seqlen, seqlen), float("-inf"), device=tokens.device
+        )
+        mask = triu(mask, diagonal=start_pos+1).type_as(h)
 
         for index, layer in enumerate(self.layers):
             h = h.to(layer.parameters().__next__().device)
