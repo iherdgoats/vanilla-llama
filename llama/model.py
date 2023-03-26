@@ -119,10 +119,10 @@ class Attention(nn.Module):
         cache_k[:bsz, start_pos : start_pos + seqlen] = xk
         cache_v[:bsz, start_pos : start_pos + seqlen] = xv
 
+        hidden_state = torch.stack([cache_k, cache_v], dim=0)
+
         keys = cache_k[:bsz, : start_pos + seqlen]
         values = cache_v[:bsz, : start_pos + seqlen]
-
-        hidden_state = torch.stack([cache_k, cache_v], dim=0)
 
         xq = xq.transpose(1, 2)
         keys = keys.transpose(1, 2)
@@ -186,10 +186,11 @@ class TransformerBlock(nn.Module):
         mask: Optional[torch.Tensor],
         hidden_state: torch.Tensor,
     ):
-        h, hidden_state = self.attention.forward(
+        attn, hidden_state = self.attention.forward(
             self.attention_norm(x), start_pos, freqs_cis, mask, hidden_state
         )
-        out = x + h + self.feed_forward.forward(self.ffn_norm(h))
+        h = x + attn
+        out = h + self.feed_forward.forward(self.ffn_norm(h))
         return out, hidden_state
 
 
