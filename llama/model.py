@@ -222,7 +222,7 @@ class Transformer(nn.Module):
             (self.n_layers, 2, self.max_batch_size, self.max_seq_len, self.n_heads, self.head_dim)
         )
     
-    def attention_mask(start_pos, seqlen):
+    def attention_mask(self, start_pos, seqlen):
         if seqlen > 1:
             mask = torch.full((1, 1, seqlen, seqlen), float("-inf"))
             return triu(mask, diagonal=start_pos + 1)
