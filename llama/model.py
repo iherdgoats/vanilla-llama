@@ -196,9 +196,12 @@ class TransformerBlock(nn.Module):
 class Transformer(nn.Module):
     def __init__(self, params: ModelArgs):
         super().__init__()
+
         self.params = params
         self.vocab_size = params.vocab_size
         self.n_layers = params.n_layers
+        self.n_heads = params.n_heads
+        self.head_dim = params.dim // params.n_heads
 
         self.tok_embeddings = torch.nn.Embedding(params.vocab_size, params.dim)
 
@@ -230,7 +233,7 @@ class Transformer(nn.Module):
 
         if hidden_state is None:
             hidden_state = torch.zeros(
-                (self.n_layers, 2, _bsz, tokens.shape[1], self.n_local_heads, self.head_dim)
+                (self.n_layers, 2, _bsz, tokens.shape[1], self.n_heads, self.head_dim)
             ).to(h.device)
 
         for index, layer in enumerate(self.layers):
