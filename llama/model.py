@@ -46,12 +46,6 @@ def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
     return torch.stack([torch.cos(freqs), torch.sin(freqs)], dim=-1)
 
 
-def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
-    ndim = x.ndim
-    shape = [d if i == 1 or i == ndim - 2 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
-    return freqs_cis.view(*shape)
-
-
 class Attention(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
@@ -88,9 +82,9 @@ class Attention(nn.Module):
         seqlen: int,
         freqs_cis: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        xq_ = xq.float().reshape(bsz, seqlen, self.n_local_heads, -1, 2)
-        xk_ = xk.float().reshape(bsz, seqlen, self.n_local_heads, -1, 2)
-        freqs_cis = reshape_for_broadcast(freqs_cis, xq_)
+        xq_ = xq.float().reshape(bsz, seqlen, self.n_local_heads, self.head_dim // 2, 2)
+        xk_ = xk.float().reshape(bsz, seqlen, self.n_local_heads, self.head_dim // 2, 2)
+        freqs_cis = freqs_cis.view(1, seqlen, 1, self.head_dim // 2, 2)
         xq_out = matmul_complex(xq_, freqs_cis).flatten(3)
         xk_out = matmul_complex(xk_, freqs_cis).flatten(3)
         return xq_out.type_as(xq), xk_out.type_as(xk)
@@ -98,7 +92,7 @@ class Attention(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        start_pos: torch.IntTensor,
+        start_pos: int,
         freqs_cis: torch.Tensor,
         mask: torch.Tensor,
         hidden_state: torch.Tensor,
@@ -112,24 +106,24 @@ class Attention(nn.Module):
 
         xq, xk = self.apply_rotary_embedding(xq, xk, bsz, seqlen, freqs_cis)
 
-        cache_k = hidden_state[0].to(xq)
-        cache_v = hidden_state[1].to(xq)
+        prev_k = hidden_state[0].to(xq)
+        prev_v = hidden_state[1].to(xq)
 
-        cache_k[:bsz, start_pos.item() : start_pos.item() + seqlen] = xk
-        cache_v[:bsz, start_pos.item() : start_pos.item() + seqlen] = xv
+        new_k = torch.cat((prev_k[:bsz, :start_pos], xk, prev_k[:bsz, start_pos + seqlen:]), dim=1)
+        new_v = torch.cat((prev_v[:bsz, :start_pos], xv, prev_v[:bsz, start_pos + seqlen:]), dim=1)
 
-        hidden_state = torch.stack([cache_k, cache_v], dim=0)
+        hidden_state = torch.stack([new_k, new_v], dim=0)
 
-        keys = cache_k[:bsz, : start_pos.item() + seqlen]
-        values = cache_v[:bsz, : start_pos.item() + seqlen]
+        keys = new_k[:bsz, : start_pos + seqlen]
+        values = new_v[:bsz, : start_pos + seqlen]
 
         xq = xq.transpose(1, 2)
         keys = keys.transpose(1, 2)
         values = values.transpose(1, 2)
         scores = torch.matmul(xq, keys.transpose(2, 3)) / math.sqrt(self.head_dim)
-        scores = scores + mask  # (bs, n_local_heads, slen, cache_len + slen)
+        scores = scores + mask
         scores = F.softmax(scores.float(), dim=-1).type_as(xq)
-        output = torch.matmul(scores, values)  # (bs, n_local_heads, slen, head_dim)
+        output = torch.matmul(scores, values)
         output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
 
         return self.wo(output), hidden_state
@@ -178,7 +172,7 @@ class TransformerBlock(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        start_pos: torch.IntTensor,
+        start_pos: int,
         freqs_cis: torch.Tensor,
         mask: torch.Tensor,
         hidden_state: torch.Tensor,
@@ -213,8 +207,10 @@ class Transformer(nn.Module):
 
         self.output = nn.Linear(params.dim, params.vocab_size, bias=False)
 
-        self.freqs_cis = precompute_freqs_cis(
-            self.params.dim // self.params.n_heads, self.params.max_seq_len * 2
+        self.freqs_cis = nn.Parameter(
+            precompute_freqs_cis(
+                self.params.dim // self.params.n_heads, self.params.max_seq_len * 2
+            )
         )
 
     def init_hidden_state(self):
@@ -222,7 +218,7 @@ class Transformer(nn.Module):
             (self.n_layers, 2, self.max_batch_size, self.max_seq_len, self.n_heads, self.head_dim)
         )
     
-    def attention_mask(self, start_pos, seqlen):
+    def attention_mask(self, start_pos: int, seqlen: int) -> torch.Tensor:
         if seqlen > 1:
             mask = torch.full((1, 1, seqlen, seqlen), float("-inf"))
             return triu(mask, diagonal=start_pos + 1)
@@ -230,15 +226,16 @@ class Transformer(nn.Module):
         return torch.zeros((1, 1, 1, 1))
 
     @torch.inference_mode()
-    def forward(self, tokens: torch.Tensor, start_pos: torch.IntTensor, mask: torch.Tensor, hidden_state: torch.Tensor):
+    def forward(self, tokens: torch.Tensor, start_pos: int, mask: torch.Tensor, hidden_state: torch.Tensor):
         seqlen = tokens.shape[1]
         h = self.tok_embeddings(tokens)
-        self.freqs_cis = self.freqs_cis.to(h.device)
-        freqs_cis = self.freqs_cis[start_pos.item() : start_pos.item() + seqlen]
+        freqs_cis = self.freqs_cis[start_pos : start_pos + seqlen]
 
+        new_hidden_state = []
         for index, layer in enumerate(self.layers):
             h = h.to(layer.parameters().__next__().device)
-            h, hidden_state[index] = layer(h, start_pos, freqs_cis, mask, hidden_state[index])
+            h, layer_hidden_state = layer(h, start_pos, freqs_cis, mask, hidden_state[index])
+            new_hidden_state.append(layer_hidden_state)
 
         h = h.to(self.norm.parameters().__next__().device)
         h = self.norm(h)
@@ -246,4 +243,5 @@ class Transformer(nn.Module):
         hl = h[:, -1, :]
         hl = hl.to(self.output.parameters().__next__().device)
         output = self.output(hl)
-        return output.float(), hidden_state
+
+        return output.float(), torch.stack(new_hidden_state, dim=0)
