@@ -73,7 +73,7 @@ class LLaMA:
         prev_pos = 0
         hidden_state = self.model.init_hidden_state()
         for cur_pos in range(start_pos, total_len):
-            logits, hidden_state = self.model.forward(tokens[:, prev_pos:cur_pos], prev_pos, hidden_state)
+            logits, hidden_state = self.model.forward(tokens[:, prev_pos:cur_pos], torch.IntTensor([prev_pos]), hidden_state)
             if temperature > 0:
                 probs = torch.softmax(logits / temperature, dim=-1)
                 next_token = sample_top_p(probs, top_p)
