@@ -95,13 +95,6 @@ class Attention(nn.Module):
             bias=False,
         )
 
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.cache_k = torch.zeros(
-            (args.max_batch_size, args.max_seq_len, self.n_local_heads, self.head_dim)
-        ).to(device)
-        self.cache_v = torch.zeros(
-            (args.max_batch_size, args.max_seq_len, self.n_local_heads, self.head_dim)
-        ).to(device)
 
     def forward(
         self,
@@ -109,7 +102,13 @@ class Attention(nn.Module):
         start_pos: int,
         freqs_cis: torch.Tensor,
         mask: Optional[torch.Tensor],
+        hidden_state: Optional[torch.Tensor],
     ):
+        if hidden_state is None:
+            hidden_state = torch.zeros(
+                (2, x.shape[0], x.shape[1], self.n_local_heads, self.head_dim)
+            ).to(x)
+
         bsz, seqlen, _ = x.shape
         xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
 
@@ -119,14 +118,16 @@ class Attention(nn.Module):
 
         xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
 
-        self.cache_k = self.cache_k.to(xq)
-        self.cache_v = self.cache_v.to(xq)
+        cache_k = hidden_state[0].to(xq)
+        cache_v = hidden_state[1].to(xq)
 
-        self.cache_k[:bsz, start_pos : start_pos + seqlen] = xk
-        self.cache_v[:bsz, start_pos : start_pos + seqlen] = xv
+        cache_k[:bsz, start_pos : start_pos + seqlen] = xk
+        cache_v[:bsz, start_pos : start_pos + seqlen] = xv
 
-        keys = self.cache_k[:bsz, : start_pos + seqlen]
-        values = self.cache_v[:bsz, : start_pos + seqlen]
+        keys = cache_k[:bsz, : start_pos + seqlen]
+        values = cache_v[:bsz, : start_pos + seqlen]
+
+        hidden_state = torch.stack([cache_k, cache_v], dim=0)
 
         xq = xq.transpose(1, 2)
         keys = keys.transpose(1, 2)
@@ -138,7 +139,7 @@ class Attention(nn.Module):
         output = torch.matmul(scores, values)  # (bs, n_local_heads, slen, head_dim)
         output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
 
-        return self.wo(output)
+        return self.wo(output), hidden_state
 
 
 class FeedForward(nn.Module):
@@ -188,28 +189,13 @@ class TransformerBlock(nn.Module):
         start_pos: int,
         freqs_cis: torch.Tensor,
         mask: Optional[torch.Tensor],
+        hidden_state: Optional[torch.Tensor],
     ):
-        h = x + self.attention.forward(
-            self.attention_norm(x), start_pos, freqs_cis, mask
+        h, hidden_state = x + self.attention.forward(
+            self.attention_norm(x), start_pos, freqs_cis, mask, hidden_state
         )
         out = h + self.feed_forward.forward(self.ffn_norm(h))
-        return out
-
-
-def convert_linear_to_bnb(float_linear):
-    new_layer = InferenceQuantizedLinear(
-        float_linear.in_features,
-        float_linear.out_features,
-        bias=float_linear.bias is not None,
-    )
-    new_layer._parameters["weight"] = bnb.nn.Int8Params(
-        float_linear.weight.data.cpu(),
-        requires_grad=False,
-        has_fp16_weights=False,
-    )
-    if float_linear.bias is not None:
-        new_layer._parameters["bias"] = float_linear.bias
-    return new_layer
+        return out, hidden_state
 
 
 class Transformer(nn.Module):
@@ -234,7 +220,7 @@ class Transformer(nn.Module):
         )
 
     @torch.inference_mode()
-    def forward(self, tokens: torch.Tensor, start_pos: int):
+    def forward(self, tokens: torch.Tensor, start_pos: int, hidden_state: Optional[torch.Tensor] = None):
         _bsz, seqlen = tokens.shape
         h = self.tok_embeddings(tokens)
         self.freqs_cis = self.freqs_cis.to(h.device)
@@ -247,13 +233,19 @@ class Transformer(nn.Module):
             )
             mask = triu(mask, diagonal=start_pos + 1).type_as(h)
 
-        for layer in self.layers:
+        next_hidden_state = torch.empty(self.params.n_layers)
+        for index, layer in enumerate(self.layers):
+            layer_hidden_state = None
+            if hidden_state is not None:
+                layer_hidden_state = hidden_state[index]
+
             h = h.to(layer.parameters().__next__().device)
-            h = layer(h, start_pos, freqs_cis, mask)
+            h, next_hidden_state[index] = layer(h, start_pos, freqs_cis, mask, layer_hidden_state)
+
         h = h.to(self.norm.parameters().__next__().device)
         h = self.norm(h)
 
         hl = h[:, -1, :]
         hl = hl.to(self.output.parameters().__next__().device)
         output = self.output(hl)
-        return output.float()
+        return output.float(), next_hidden_state
