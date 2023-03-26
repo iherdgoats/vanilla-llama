@@ -46,11 +46,6 @@ def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
     return torch.stack([torch.cos(freqs), torch.sin(freqs)], dim=-1)
 
 
-def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
-    ndim = x.ndim
-    shape = [d if i == 1 or i == ndim - 2 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
-    return freqs_cis.view(*shape)
-
 class Attention(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
@@ -79,7 +74,7 @@ class Attention(nn.Module):
             bias=False,
         )
 
-    def apply_rotary_emb(
+    def apply_rotary_embedding(
         self,
         xq: torch.Tensor,
         xk: torch.Tensor,
@@ -87,9 +82,9 @@ class Attention(nn.Module):
         seqlen: int,
         freqs_cis: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        xq_ = xq.float().reshape(bsz, seqlen, self.n_local_heads, -1, 2)
-        xk_ = xk.float().reshape(bsz, seqlen, self.n_local_heads, -1, 2)
-        freqs_cis = reshape_for_broadcast(freqs_cis, xq_)
+        xq_ = xq.float().reshape(bsz, seqlen, self.n_local_heads, self.head_dim/2, 2)
+        xk_ = xk.float().reshape(bsz, seqlen, self.n_local_heads, self.head_dim/2, 2)
+        freqs_cis = freqs_cis.view(seqlen, self.head_dim/2, 2)
         xq_out = matmul_complex(xq_, freqs_cis).flatten(3)
         xk_out = matmul_complex(xk_, freqs_cis).flatten(3)
         return xq_out.type_as(xq), xk_out.type_as(xk)
@@ -109,7 +104,7 @@ class Attention(nn.Module):
         xk = xk.view(bsz, seqlen, self.n_local_heads, self.head_dim)
         xv = xv.view(bsz, seqlen, self.n_local_heads, self.head_dim)
 
-        xq, xk = self.apply_rotary_emb(xq, xk, bsz, seqlen, freqs_cis)
+        xq, xk = self.apply_rotary_embedding(xq, xk, bsz, seqlen, freqs_cis)
 
         cache_k = hidden_state[0].to(xq)
         cache_v = hidden_state[1].to(xq)
@@ -126,8 +121,7 @@ class Attention(nn.Module):
         keys = keys.transpose(1, 2)
         values = values.transpose(1, 2)
         scores = torch.matmul(xq, keys.transpose(2, 3)) / math.sqrt(self.head_dim)
-        if mask is not None:
-            scores = scores + mask  # (bs, n_local_heads, slen, cache_len + slen)
+        scores = scores + mask  # (bs, n_local_heads, slen, cache_len + slen)
         scores = F.softmax(scores.float(), dim=-1).type_as(xq)
         output = torch.matmul(scores, values)  # (bs, n_local_heads, slen, head_dim)
         output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
