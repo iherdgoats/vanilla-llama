@@ -10,11 +10,11 @@ from llama.model import ModelArgs, Transformer, attention_mask, initial_hidden_s
 
 
 class LLaMA:
-    def __init__(self, model: Transformer, tokenizer: Tokenizer, params: ModelArgs):
+    def __init__(self, params: ModelArgs, model: Transformer, tokenizer: Tokenizer):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.params = params
         self.model = model
         self.tokenizer = tokenizer
-        self.params = params
 
     def _should_stop(self, tokens, prompt_tokens, stop_ids, stop_words):
         if stop_ids is not None:
