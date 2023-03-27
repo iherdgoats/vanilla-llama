@@ -4,13 +4,14 @@
 from typing import List
 
 import torch
+from torch import nn
 
 from llama.tokenizer import Tokenizer
-from llama.model import ModelArgs, Transformer, attention_mask, initial_hidden_state
+from llama.model import ModelArgs, attention_mask, initial_hidden_state
 
 
 class LLaMA:
-    def __init__(self, params: ModelArgs, model: Transformer, tokenizer: Tokenizer):
+    def __init__(self, params: ModelArgs, model: nn.Module, tokenizer: Tokenizer):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.params = params
         self.model = model
