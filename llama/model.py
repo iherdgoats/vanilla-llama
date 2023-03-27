@@ -102,13 +102,13 @@ class Attention(nn.Module):
         prev_k = hidden_state[0].to(xq)
         prev_v = hidden_state[1].to(xq)
 
-        new_k = torch.cat((prev_k[:bsz, :start_pos], xk, prev_k[:bsz, start_pos + seqlen:]), dim=1)
-        new_v = torch.cat((prev_v[:bsz, :start_pos], xv, prev_v[:bsz, start_pos + seqlen:]), dim=1)
+        new_k = torch.cat((prev_k[:bsz, :start_pos.long()], xk, prev_k[:bsz, start_pos.long() + seqlen:]), dim=1)
+        new_v = torch.cat((prev_v[:bsz, :start_pos.long()], xv, prev_v[:bsz, start_pos.long() + seqlen:]), dim=1)
 
         hidden_state = torch.stack([new_k, new_v], dim=0)
 
-        keys = new_k[:bsz, : start_pos + seqlen]
-        values = new_v[:bsz, : start_pos + seqlen]
+        keys = new_k[:bsz, : start_pos.long() + seqlen]
+        values = new_v[:bsz, : start_pos.long() + seqlen]
 
         xq = xq.transpose(1, 2)
         keys = keys.transpose(1, 2)
@@ -226,8 +226,7 @@ class Transformer(nn.Module):
     def forward(self, tokens: torch.Tensor, start_pos: torch.Tensor, mask: torch.Tensor, hidden_state: torch.Tensor):
         seqlen = tokens.shape[1]
         h = self.tok_embeddings(tokens)
-        start_pos = start_pos.long()
-        freqs_cis = self.freqs_cis[start_pos : start_pos + seqlen]
+        freqs_cis = self.freqs_cis[start_pos.long() : start_pos.long() + seqlen]
 
         new_hidden_state = []
         for index, layer in enumerate(self.layers):
