@@ -225,7 +225,7 @@ class Transformer(nn.Module):
     @torch.inference_mode()
     def forward(self, tokens: torch.Tensor, start_pos: torch.Tensor, mask: torch.Tensor, hidden_state: torch.Tensor):
         seqlen = tokens.shape[1]
-        h = self.tok_embeddings(tokens)
+        h = self.tok_embeddings(tokens.long())
         freqs_cis = self.freqs_cis[start_pos.long() : start_pos.long() + seqlen]
 
         new_hidden_state = []
