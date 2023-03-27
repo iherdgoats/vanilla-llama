@@ -85,7 +85,7 @@ class Attention(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        start_pos: torch.IntTensor,
+        start_pos: torch.Tensor,
         freqs_cis: torch.Tensor,
         mask: torch.Tensor,
         hidden_state: torch.Tensor,
@@ -165,7 +165,7 @@ class TransformerBlock(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        start_pos: torch.IntTensor,
+        start_pos: torch.Tensor,
         freqs_cis: torch.Tensor,
         mask: torch.Tensor,
         hidden_state: torch.Tensor,
@@ -223,9 +223,10 @@ class Transformer(nn.Module):
         return torch.zeros((1, 1, 1, 1))
 
     @torch.inference_mode()
-    def forward(self, tokens: torch.Tensor, start_pos: torch.IntTensor, mask: torch.Tensor, hidden_state: torch.Tensor):
+    def forward(self, tokens: torch.Tensor, start_pos: torch.Tensor, mask: torch.Tensor, hidden_state: torch.Tensor):
         seqlen = tokens.shape[1]
         h = self.tok_embeddings(tokens)
+        start_pos = start_pos.long()
         freqs_cis = self.freqs_cis[start_pos : start_pos + seqlen]
 
         new_hidden_state = []
