@@ -210,18 +210,6 @@ class Transformer(nn.Module):
         freqs = torch.outer(t, freqs).float()  # type: ignore
         return torch.stack([torch.cos(freqs), torch.sin(freqs)], dim=-1)
 
-    def init_hidden_state(self):
-        return torch.zeros(
-            (self.n_layers, 2, self.max_batch_size, self.max_seq_len, self.n_heads, self.head_dim)
-        )
-    
-    def attention_mask(self, start_pos: int, seqlen: int) -> torch.Tensor:
-        if seqlen > 1:
-            mask = torch.full((1, 1, seqlen, seqlen), float("-inf"))
-            return triu(mask, diagonal=start_pos + 1)
-
-        return torch.zeros((1, 1, 1, 1))
-
     @torch.inference_mode()
     def forward(self, tokens: torch.Tensor, start_pos: torch.Tensor, mask: torch.Tensor, hidden_state: torch.Tensor):
         seqlen = tokens.shape[1]
@@ -242,3 +230,17 @@ class Transformer(nn.Module):
         output = self.output(hl)
 
         return output.float(), torch.stack(new_hidden_state, dim=0)
+
+
+def init_hidden_state(params: ModelArgs):
+    return torch.zeros(
+        (params.n_layers, 2, params.max_batch_size, params.max_seq_len, params.n_heads, params.head_dim)
+    )
+
+
+def attention_mask(start_pos: int, seqlen: int) -> torch.Tensor:
+    if seqlen > 1:
+        mask = torch.full((1, 1, seqlen, seqlen), float("-inf"))
+        return triu(mask, diagonal=start_pos + 1)
+
+    return torch.zeros((1, 1, 1, 1))

@@ -6,14 +6,15 @@ from typing import List
 import torch
 
 from llama.tokenizer import Tokenizer
-from llama.model import Transformer
+from llama.model import ModelArgs, Transformer, attention_mask, initial_hidden_state
 
 
 class LLaMA:
-    def __init__(self, model: Transformer, tokenizer: Tokenizer):
+    def __init__(self, model: Transformer, tokenizer: Tokenizer, params: ModelArgs):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model = model
         self.tokenizer = tokenizer
+        self.params = params
 
     def _should_stop(self, tokens, prompt_tokens, stop_ids, stop_words):
         if stop_ids is not None:
@@ -54,8 +55,7 @@ class LLaMA:
         stop_words: List[str] = None,
     ) -> List[str]:
         bsz = len(prompts)
-        params = self.model.params
-        assert bsz <= params.max_batch_size, (bsz, params.max_batch_size)
+        assert bsz <= self.params.max_batch_size, (bsz, self.params.max_batch_size)
 
         prompt_tokens = [self.tokenizer.encode(x, bos=True, eos=False) for x in prompts]
         num_input_tokens = [len(t) for t in prompt_tokens]
@@ -63,7 +63,7 @@ class LLaMA:
         min_prompt_size = min([len(t) for t in prompt_tokens])
         max_prompt_size = max([len(t) for t in prompt_tokens])
 
-        total_len = min(params.max_seq_len, max_gen_len + max_prompt_size)
+        total_len = min(self.params.max_seq_len, max_gen_len + max_prompt_size)
 
         tokens = torch.full((bsz, total_len), self.tokenizer.pad_id).to(self.device).long()
         for k, t in enumerate(prompt_tokens):
@@ -71,9 +71,9 @@ class LLaMA:
         input_text_mask = tokens != self.tokenizer.pad_id
         start_pos = min_prompt_size
         prev_pos = 0
-        hidden_state = self.model.init_hidden_state()
+        hidden_state = initial_hidden_state(self.params).to(self.device)
         for cur_pos in range(start_pos, total_len):
-            mask = self.model.attention_mask(prev_pos, cur_pos - prev_pos).to(tokens.device)
+            mask = attention_mask(prev_pos, cur_pos - prev_pos).to(self.device)
             logits, hidden_state = self.model.forward(tokens[:, prev_pos:cur_pos], torch.Tensor([prev_pos]), mask, hidden_state)
             if temperature > 0:
                 probs = torch.softmax(logits / temperature, dim=-1)
