@@ -232,9 +232,10 @@ class Transformer(nn.Module):
         return output.float(), torch.stack(new_hidden_state, dim=0)
 
 
-def initial_hidden_state(params: ModelArgs):
+def initial_hidden_state(args: ModelArgs):
+    head_dim = args.dim // args.n_heads
     return torch.zeros(
-        (params.n_layers, 2, params.max_batch_size, params.max_seq_len, params.n_heads, params.head_dim)
+        (args.n_layers, 2, args.max_batch_size, args.max_seq_len, args.n_heads, head_dim)
     )
 
 
